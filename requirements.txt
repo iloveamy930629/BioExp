@@ -1,0 +1,8 @@
+
+numpy
+joblib
+scikit-learn
+flask
+line-bot-sdk
+openai==0.28
+python-dotenv
