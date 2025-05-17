@@ -12,7 +12,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from eeg import process
 from gpt.response import build_prompt, ask_gpt
-
+from style_selector import make_style_flex
 def generate_eeg_flex_message(status_dict):
     # 將輸入的 key 統一轉成標準 label
     label_mapping = {
@@ -141,6 +141,7 @@ handler = WebhookHandler(os.getenv("LINE_CHANNEL_SECRET"))
 
 # === 對話歷史管理 ===
 conversation_history = defaultdict(list)
+user_style = defaultdict(dict)  # 記住每位使用者的三層設定
 MAX_TURNS = 6  # 最多保留 5 輪對話
 
 @app.route("/callback", methods=['POST'])
@@ -155,6 +156,37 @@ def callback():
         abort(400)
     return 'OK'
 
+
+# === 系統 prompt 對應生成 ===
+def build_custom_prompt(style):
+    intent_map = {
+        "intent_relax": "陪伴對方輕鬆一下、輕輕安慰、一起建議耍廢一下",
+        "intent_advice": "給對方明確、有用的建議，實際解決問題",
+        "intent_empathy": "理解對方情緒，表達共感，同理處境或情緒",
+        "intent_motivate": "激勵對方，讓他產生動力，或打醒他讓他不要繼續消沉",
+        "intent_vent": "傾聽並讓對方自由抒發，當個很棒的聆聽者，話不要太多"
+    }
+    tone_map = {
+        "tone_soft": "語氣溫柔、貼心，有耐心，像抱枕，溫暖療癒、引導對方說出煩惱",
+        "tone_funny": "語氣幽默，有時候講幹話或笑話，讓氣氛活潑一點",
+        "tone_practical": "語氣理性、有條理、條列式",
+        "tone_cool": "語氣簡潔、冷靜、有型",
+        "tone_roast": "語氣毒舌、稍微調侃一下下對方但不要太兇"
+    }
+    persona_map = {
+        "persona_senior": "像學長姐，講話有個性、分享過來人經驗",
+        "persona_alien": "像外星人，講話很抽象但有智慧，腦迴路很奇特",
+        "persona_slacker": "像小廢柴同學，會說我懂你、一起爛，會自嘲",
+        "persona_parent": "像老師或父母，比較嚴肅成熟，會「提醒對方應該怎麼做」，語氣關心但不寵溺",
+        "persona_lover": "像戀人，給很多情緒價值、讚美與關愛，講話像抱、撫摸、肯定對方"
+    }
+    desc = [intent_map.get(style.get("intent"), ""), tone_map.get(style.get("tone"), ""), persona_map.get(style.get("persona"), "")]
+    desc = [d for d in desc if d]
+    return (
+        "你是一位說繁體中文的聊天夥伴，請根據以下設定回應使用者：\n"
+        + "；".join(desc) + "。\n在日常對話中，根據使用者的輸入與最近幾輪的聊天內容，給出具體、自然、有幫助的回應。\n不要太制式，保持人味，訊息盡量在150字。"
+    )
+
 # === 處理使用者訊息 ===
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
@@ -165,9 +197,17 @@ def handle_message(event):
         try:
             eeg_path = "../raw_data/S09/6.txt"  # 可改為自動讀最新 EEG
             eeg_state = process.predict_prob(eeg_path)
+            
+            # 加入自定義風格，若無則用預設
+            style = user_style.get(user_id, {
+                "intent": "intent_relax",
+                "tone": "tone_soft",
+                "persona": "persona_parent"
+            })
+            
             prompt = build_prompt(eeg_state)
             print(f"🧠 EEG 分類機率：{eeg_state}")
-            reply = ask_gpt(prompt)
+            reply = ask_gpt(prompt, style)         
 
             # 建立 Flex Message
             flex_json = generate_eeg_flex_message(eeg_state)
@@ -178,9 +218,21 @@ def handle_message(event):
         except Exception as e:
             line_bot_api.push_message(user_id, TextSendMessage(text=f"⚠️ 發生錯誤：{e}"))
 
-    elif text == "重設對話":
-        conversation_history[user_id] = []
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✅ 對話已重置。"))
+    elif text == "建立專屬角色":
+        user_style[user_id] = {}  # 重設
+        line_bot_api.push_message(user_id, make_style_flex("layer1"))
+
+    # === Step 3: 接收角色設定回覆 ===
+    elif text.startswith("intent_"):
+        user_style[user_id]["intent"] = text
+        line_bot_api.push_message(user_id, make_style_flex("layer2"))
+    elif text.startswith("tone_"):
+        user_style[user_id]["tone"] = text
+        line_bot_api.push_message(user_id, make_style_flex("layer3"))
+
+    elif text.startswith("persona_"):
+        user_style[user_id]["persona"] = text
+        line_bot_api.push_message(user_id, TextSendMessage(text="✅ 已儲存你的對話風格，從現在開始我會照這樣回覆你！"))
 
     else:
         conversation_history[user_id].append({"role": "user", "content": text})
@@ -188,20 +240,18 @@ def handle_message(event):
         if len(conversation_history[user_id]) > MAX_TURNS * 2:
             conversation_history[user_id] = conversation_history[user_id][-MAX_TURNS * 2:]
 
+        style = user_style.get(user_id, {
+            "intent": "intent_relax",
+            "tone": "tone_soft",
+            "persona": "persona_parent"
+        })
+
+        system_prompt = build_custom_prompt(style)
+
         try:
             response = openai.ChatCompletion.create(
                 model="gpt-4",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "你是一位說繁體中文、溫暖幽默又能同理人情緒的聊天夥伴。(必須用繁體中文回答)"
-                            "你很會陪伴、安慰和傾聽別人，受眾是大學生，所以你講話可以年輕、有趣，有時候帶點北爛的語氣沒關係。"
-                            "在日常對話中，根據使用者的輸入與最近幾輪的聊天內容，給出具體、自然、有幫助的回應。"
-                            "不要像機器人一樣講話太制式，可以自然一點、有點人味，甚至偶爾用 emoji 或電機系會懂的詞彙（例如期中爆炸、選課一時爽期末火葬場、哥布林等等）讓人感覺你是真的在陪伴。"
-                        )
-                    }
-                ] + conversation_history[user_id]
+                messages=[{"role": "system", "content": system_prompt}] + conversation_history[user_id]
             )
             reply = response["choices"][0]["message"]["content"]
             conversation_history[user_id].append({"role": "assistant", "content": reply})
@@ -209,5 +259,8 @@ def handle_message(event):
         except Exception as e:
             line_bot_api.push_message(user_id, TextSendMessage(text=f"⚠️ GPT 回應錯誤：{e}"))
 
+
+
 if __name__ == "__main__":
     app.run(port=5000)
+

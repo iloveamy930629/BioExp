@@ -35,35 +35,87 @@ def build_prompt(eeg_state):
 
     # 結構化 prompt
     prompt = (
-        f"你是一個專業又會說繁體中文的聊天夥伴，擅長分析腦波並安慰或鼓勵台灣的大學生。"
         f"請依據以下腦波狀態：{state_str}，其中主要狀態為「{dominant_label}（{percent_text}）」。"
         f"請生成一段包含以下格式的文字：\n\n"
-        f"🎯 目前主導狀態：{dominant_label}（{percent_text}）\n\n"
-        f"🧠 分析：一句話說明這種狀態會有什麼感受或現象（用年輕語氣）\n\n"
-        f"🌱 建議：一段有實際幫助的建議，生活化一點\n\n"
-        f"🔥 加油：一句有趣又真誠的鼓勵話語，可以加入 emoji，不能太浮誇"
+        f"🎯 目前狀態：{dominant_label}（{percent_text}）\n\n"
+        f"🧠 分析：一句話說明這種狀態會有什麼感受或現象（用年輕語氣、100字以內）\n\n"
+        f"🌱 建議與鼓勵：一段有實際幫助的建議，生活化一點(150字以內)\n\n"
     )
     return prompt
-def ask_gpt(prompt):
+
+# def ask_gpt(prompt, style=None):
+#     try:
+#         response = openai.ChatCompletion.create(
+#             model="gpt-4",
+#             messages=[
+#                 {
+#                     "role": "system",
+#                     "content": (
+#                         "你是一位會說繁體中文、懂腦波、懂電機系大學生的陪聊夥伴。"
+#                         "你很會安慰、理解別人心理狀態，用詞自然不做作，有時候可以輕鬆幽默，"
+#                         "但重點是讓對方覺得被理解、有幫助。請根據 prompt 分析出對方的主導狀態並給出專業但貼近生活的建議。"
+#                     )
+#                 },
+#                 {"role": "user", "content": prompt}
+#             ]
+#         )
+#         return response['choices'][0]['message']['content']
+#     except Exception as e:
+#         return f"⚠️ GPT 呼叫失敗：{e}"
+
+def ask_gpt(prompt, style=None):
     try:
+        # 預設的角色描述
+        base_system_prompt = (
+            "你是一位會說繁體中文、懂腦波、理解別人心理狀態、用詞自然不做作。"
+            "你擅長安慰、鼓勵、或陪伴電機系大學生，回應風格要有溫度、自然，必要時可以年輕幽默。"
+        )
+
+        # 若有 style，整合補充說明
+        if style:
+            intent_map = {
+                "intent_relax": "陪伴對方輕鬆一下、輕輕安慰、一起建議耍廢一下",
+                "intent_advice": "給對方明確、有用的建議，實際解決問題",
+                "intent_empathy": "理解對方情緒，表達共感，同理處境或情緒",
+                "intent_motivate": "激勵對方，讓他產生動力，或打醒他讓他不要繼續消沉",
+                "intent_vent": "傾聽並讓對方自由抒發，當個很棒的聆聽者，話不要太多"
+            }
+            tone_map = {
+                "tone_soft": "語氣溫柔、貼心，有耐心，像抱枕，溫暖療癒、引導對方說出煩惱",
+                "tone_funny": "語氣幽默，有時候講幹話或笑話，讓氣氛活潑一點",
+                "tone_practical": "語氣理性、有條理、條列式",
+                "tone_cool": "語氣簡潔、冷靜、有型",
+                "tone_roast": "語氣毒舌、稍微調侃一下下對方但不要太兇"
+            }
+            persona_map = {
+                "persona_senior": "像學長姐，講話有個性、分享過來人經驗",
+                "persona_alien": "像外星人，講話很抽象但有智慧，腦迴路很奇特",
+                "persona_slacker": "像小廢柴同學，會說我懂你、一起爛，會自嘲",
+                "persona_parent": "像爸媽老師，比較嚴肅成熟，會「提醒對方應該怎麼做」，語氣關心但不寵溺",
+                "persona_lover": "像戀人，給很多情緒價值、讚美與關愛，講話像抱、撫摸、肯定對方"
+            }
+            additions = [
+                intent_map.get(style.get("intent"), ""),
+                tone_map.get(style.get("tone"), ""),
+                persona_map.get(style.get("persona"), "")
+            ]
+            additions = [s for s in additions if s]
+            style_str = "風格設定為：" + "；".join(additions) if additions else ""
+            full_prompt = base_system_prompt + (f"\n{style_str}" if style_str else "")
+        else:
+            full_prompt = base_system_prompt
+
+        # 建立對話
         response = openai.ChatCompletion.create(
             model="gpt-4",
             messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "你是一位會說繁體中文、懂腦波、懂電機系大學生的陪聊夥伴。"
-                        "你很會安慰、理解別人心理狀態，用詞自然不做作，有時候可以輕鬆幽默，"
-                        "但重點是讓對方覺得被理解、有幫助。請根據 prompt 分析出對方的主導狀態並給出專業但貼近生活的建議。"
-                    )
-                },
+                {"role": "system", "content": full_prompt},
                 {"role": "user", "content": prompt}
             ]
         )
         return response['choices'][0]['message']['content']
     except Exception as e:
         return f"⚠️ GPT 呼叫失敗：{e}"
-
 
 # def build_prompt(eeg_state):
 #     """
