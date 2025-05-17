@@ -37,19 +37,33 @@ def extract_features(vec):
         -np.sum((vec_safe/np.sum(vec_safe)) * np.log(vec_safe/np.sum(vec_safe)))
     ])
 
+#preprocessed data
+# def load_single_txt_with_features(txt_path):
+#     vec = np.loadtxt(txt_path)
+#     if vec.ndim != 1:
+#         raise ValueError("⚠️ 資料格式錯誤，應為一維向量")
+
+#     fs = 500
+#     n_fft = 10000
+#     freqs = np.fft.rfftfreq(n_fft, d=1/fs)
+
+#     stat_feat = extract_features(vec)
+#     band_feat = extract_band_power(vec, freqs)
+#     fused = np.concatenate([vec, stat_feat, band_feat])
+#     return fused
+
 def load_single_txt_with_features(txt_path):
     vec = np.loadtxt(txt_path)
-    if vec.ndim != 1:
-        raise ValueError("⚠️ 資料格式錯誤，應為一維向量")
+    vec = vec[10000:20000]
+    fft_result = np.fft.rfft(vec, n=10000)
+    power = np.abs(fft_result) ** 2
+    log_power = np.log1p(power)
+    freqs = np.fft.rfftfreq(10000, d=1/500)
 
-    fs = 500
-    n_fft = 10000
-    freqs = np.fft.rfftfreq(n_fft, d=1/fs)
+    stat_feat = extract_features(log_power)
+    band_feat = extract_band_power(log_power, freqs)
 
-    stat_feat = extract_features(vec)
-    band_feat = extract_band_power(vec, freqs)
-    fused = np.concatenate([vec, stat_feat, band_feat])
-    return fused
+    return np.concatenate([log_power, stat_feat, band_feat])
 
 # === Model ===
 class EEGMLP(nn.Module):
@@ -88,6 +102,6 @@ def predict_prob(txt_path):
         return {label_map[i]: float(prob[i]) for i in range(4)}
 
 # === Run EEG 推論 ===
-# eeg_file = "../data/S9_6-3.txt"
+# eeg_file = "../raw_data/S09/6.txt"
 # eeg_state = predict_prob(eeg_file)
 # print("🧠 EEG 分類機率：", eeg_state)
