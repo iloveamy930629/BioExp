@@ -53,8 +53,11 @@ def extract_features(vec):
 #     return fused
 
 def load_single_txt_with_features(txt_path):
-    vec = np.loadtxt(txt_path)
-    vec = vec[10000:20000]
+    with open(txt_path, encoding='utf-8') as f:
+        vec = np.loadtxt(f, skiprows=1)
+
+    # vec = np.loadtxt(txt_path)
+    vec = vec[:10000]
     fft_result = np.fft.rfft(vec, n=10000)
     power = np.abs(fft_result) ** 2
     log_power = np.log1p(power)

@@ -13,6 +13,8 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from eeg import process
 from gpt.response import build_prompt, ask_gpt
 from style_selector import make_style_flex
+from persona_prompt_map import persona_map
+
 def generate_eeg_flex_message(status_dict):
     # 將輸入的 key 統一轉成標準 label
     label_mapping = {
@@ -159,33 +161,13 @@ def callback():
 
 # === 系統 prompt 對應生成 ===
 def build_custom_prompt(style):
-    intent_map = {
-        "intent_relax": "陪伴對方輕鬆一下、輕輕安慰、一起建議耍廢一下",
-        "intent_advice": "給對方明確、有用的建議，實際解決問題",
-        "intent_empathy": "理解對方情緒，表達共感，同理處境或情緒",
-        "intent_motivate": "激勵對方，讓他產生動力，或打醒他讓他不要繼續消沉",
-        "intent_vent": "傾聽並讓對方自由抒發，當個很棒的聆聽者，話不要太多"
-    }
-    tone_map = {
-        "tone_soft": "語氣溫柔、貼心，有耐心，像抱枕，溫暖療癒、引導對方說出煩惱",
-        "tone_funny": "語氣幽默，有時候講幹話或笑話，讓氣氛活潑一點",
-        "tone_practical": "語氣理性、有條理、條列式",
-        "tone_cool": "語氣簡潔、冷靜、有型",
-        "tone_roast": "語氣毒舌、稍微調侃一下下對方但不要太兇"
-    }
-    persona_map = {
-        "persona_senior": "像學長姐，講話有個性、分享過來人經驗",
-        "persona_alien": "像外星人，講話很抽象但有智慧，腦迴路很奇特",
-        "persona_slacker": "像小廢柴同學，會說我懂你、一起爛，會自嘲",
-        "persona_parent": "像老師或父母，比較嚴肅成熟，會「提醒對方應該怎麼做」，語氣關心但不寵溺",
-        "persona_lover": "像戀人，給很多情緒價值、讚美與關愛，講話像抱、撫摸、肯定對方"
-    }
-    desc = [intent_map.get(style.get("intent"), ""), tone_map.get(style.get("tone"), ""), persona_map.get(style.get("persona"), "")]
-    desc = [d for d in desc if d]
+    desc = persona_map.get(style.get("persona"), "")
     return (
-        "你是一位說繁體中文的聊天夥伴，請根據以下設定回應使用者：\n"
-        + "；".join(desc) + "。\n在日常對話中，根據使用者的輸入與最近幾輪的聊天內容，給出具體、自然、有幫助的回應。\n不要太制式，保持人味，訊息盡量在150字。"
+        "你是一位只會說繁體中文的聊天夥伴，請依照以下角色風格回應使用者："
+        + desc +
+        "。\n在日常對話中，根據使用者的輸入與最近幾輪的聊天內容，給出具體、自然、有幫助的回應。\n不要太制式，保持人味，訊息盡量在50字，最後請確認所有回應都是繁體字"
     )
+
 
 # === 處理使用者訊息 ===
 @handler.add(MessageEvent, message=TextMessage)
@@ -195,7 +177,8 @@ def handle_message(event):
 
     if text == "傳送EEG":
         try:
-            eeg_path = "../raw_data/S09/6.txt"  # 可改為自動讀最新 EEG
+            # eeg_path = "../raw_data/S09/6.txt"  # 可改為自動讀最新 EEG
+            eeg_path = "/mnt/c/Users/陳郁玲/Desktop/BIOPAC/data/data.txt"
             eeg_state = process.predict_prob(eeg_path)
             
             # 加入自定義風格，若無則用預設
@@ -213,26 +196,32 @@ def handle_message(event):
             flex_json = generate_eeg_flex_message(eeg_state)
             flex_msg = FlexSendMessage(alt_text="🧠 腦波狀態分析", contents=flex_json)
 
-            line_bot_api.push_message(user_id, TextSendMessage(text=reply))
-            line_bot_api.push_message(user_id, flex_msg)
+            # line_bot_api.push_message(user_id, TextSendMessage(text=reply))
+            # line_bot_api.push_message(user_id, flex_msg)
+            line_bot_api.reply_message(
+                event.reply_token,
+                messages=[
+                    TextSendMessage(text=reply),
+                    flex_msg
+                ]
+            )
         except Exception as e:
-            line_bot_api.push_message(user_id, TextSendMessage(text=f"⚠️ 發生錯誤：{e}"))
+            # line_bot_api.push_message(user_id, TextSendMessage(text=f"⚠️ 發生錯誤：{e}"))
+            line_bot_api.reply_message(
+                event.reply_token,
+                TextSendMessage(text=f"⚠️ 發生錯誤：{e}")
+            )
 
     elif text == "建立專屬角色":
-        user_style[user_id] = {}  # 重設
-        line_bot_api.push_message(user_id, make_style_flex("layer1"))
-
-    # === Step 3: 接收角色設定回覆 ===
-    elif text.startswith("intent_"):
-        user_style[user_id]["intent"] = text
-        line_bot_api.push_message(user_id, make_style_flex("layer2"))
-    elif text.startswith("tone_"):
-        user_style[user_id]["tone"] = text
-        line_bot_api.push_message(user_id, make_style_flex("layer3"))
+        user_style[user_id] = {}  
+        # line_bot_api.push_message(user_id, make_style_flex("persona_only"))
+        line_bot_api.reply_message(event.reply_token, make_style_flex("persona_only"))
 
     elif text.startswith("persona_"):
         user_style[user_id]["persona"] = text
-        line_bot_api.push_message(user_id, TextSendMessage(text="✅ 已儲存你的對話風格，從現在開始我會照這樣回覆你！"))
+        conversation_history[user_id] = []  # 🔁 清空歷史對話
+        # line_bot_api.push_message(user_id, TextSendMessage(text="✅ 已儲存你的對話風格，從現在開始我會照這樣回覆你！"))
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✅ 已儲存你的對話風格，從現在開始我會照這樣回覆你！"))
 
     else:
         conversation_history[user_id].append({"role": "user", "content": text})
@@ -241,9 +230,7 @@ def handle_message(event):
             conversation_history[user_id] = conversation_history[user_id][-MAX_TURNS * 2:]
 
         style = user_style.get(user_id, {
-            "intent": "intent_relax",
-            "tone": "tone_soft",
-            "persona": "persona_parent"
+            "persona": "persona_senior"
         })
 
         system_prompt = build_custom_prompt(style)
@@ -255,10 +242,18 @@ def handle_message(event):
             )
             reply = response["choices"][0]["message"]["content"]
             conversation_history[user_id].append({"role": "assistant", "content": reply})
-            line_bot_api.push_message(user_id, TextSendMessage(text=reply))
+            # line_bot_api.push_message(user_id, TextSendMessage(text=reply))
+            # ✅ 使用 reply_message 回傳
+            line_bot_api.reply_message(
+                event.reply_token,
+                TextSendMessage(text=reply)
+            )
         except Exception as e:
-            line_bot_api.push_message(user_id, TextSendMessage(text=f"⚠️ GPT 回應錯誤：{e}"))
-
+            # line_bot_api.push_message(user_id, TextSendMessage(text=f"⚠️ GPT 回應錯誤：{e}"))
+            line_bot_api.reply_message(
+                event.reply_token,
+                TextSendMessage(text=f"⚠️ GPT 回應錯誤：{e}")
+            )
 
 
 if __name__ == "__main__":
