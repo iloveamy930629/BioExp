@@ -6,7 +6,7 @@ from gpt.persona_map import persona_map
 load_dotenv("../.env")
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
-def build_prompt(eeg_state):
+def build_prompt(eeg_state, history=None):
     """
     根據 EEG 分類機率輸出適合 GPT 的提示語句，讓 GPT 以年輕幽默又專業的方式回應。
     """
@@ -33,15 +33,31 @@ def build_prompt(eeg_state):
 
     # 完整狀態描述
     state_str = "，".join([f"{label_map[k]} {round(v * 100, 1)}%" for k, v in sorted_state])
+    
+    # 加入歷史紀錄
+    history_summary = ""
+    if history and len(history) > 1:
+        recent = []
+        for hist in history[-3:]:
+            dominant = max(hist.items(), key=lambda x: x[1])[0]
+            recent.append(label_map.get(dominant, dominant))
+        history_summary = (
+            f"\n（歷史資料：{' → '.join(recent)}）"
+        )
 
     # 結構化 prompt
     prompt = (
         f"請依據以下腦波狀態：{state_str}，其中主要狀態為「{dominant_label}（{percent_text}）」。"
+        + history_summary +
         f"請生成一段包含以下格式的文字：\n\n"
         f"🎯 目前狀態：{dominant_label}（{percent_text}）\n\n"
+        f"📈 狀態變化:閱讀歷史資料，直接用「記憶 → 放鬆 → 記憶」類似這樣的方式呈現狀態變化，沒有歷史資料時則不生成狀態變化這一行\n\n"
         f"🧠 分析：一句話說明這種狀態通常會有什麼感受或現象（用年輕語氣、100字以內）\n\n"
         f"🌱 建議與鼓勵：一段建議或安慰的話，符合角色設定(150字以內)\n\n"
     )
+    print("=== 最終生成的 Prompt ===")
+    print(prompt)
+
     return prompt
 
 # def ask_gpt(prompt, style=None):

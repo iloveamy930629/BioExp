@@ -7,7 +7,7 @@ import os
 import openai
 from collections import defaultdict
 from linebot.models import FlexSendMessage
-
+from linebot.models import QuickReply, QuickReplyButton, MessageAction
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from eeg import process
@@ -144,7 +144,8 @@ handler = WebhookHandler(os.getenv("LINE_CHANNEL_SECRET"))
 # === 對話歷史管理 ===
 conversation_history = defaultdict(list)
 user_style = defaultdict(dict)  # 記住每位使用者的三層設定
-MAX_TURNS = 6  # 最多保留 5 輪對話
+user_eeg_history = defaultdict(list)
+MAX_TURNS = 4  # 最多保留 5 輪對話
 
 @app.route("/callback", methods=['POST'])
 def callback():
@@ -165,15 +166,25 @@ def build_custom_prompt(style):
     return (
         "你是一位只會說繁體中文的聊天夥伴，請依照以下角色風格回應使用者："
         + desc +
-        "。\n在日常對話中，根據使用者的輸入與最近幾輪的聊天內容，給出具體、自然、有幫助的回應。\n不要太制式，保持人味，訊息盡量在50字，最後請確認所有回應都是繁體字"
+        "如果近幾輪的聊天內容中有「收到！我會往更...的方向改進！」，請記得以此方向來做修正以符合使用者偏好"
+        "\n在日常對話中，根據使用者的輸入與最近幾輪的聊天內容，給出具體、自然、有幫助的回應。\n不要太制式，保持人味，訊息盡量在50字，最後請確認所有回應都是繁體字，回覆不需要用引號括起來"
     )
 
+def make_feedback_quick_reply():
+    return QuickReply(
+        items=[
+            QuickReplyButton(action=MessageAction(label="太長了，請精簡一點", text="FEEDBACK_太長了")),
+            QuickReplyButton(action=MessageAction(label="太模糊了，請具體一點", text="FEEDBACK_太模糊了")),
+            QuickReplyButton(action=MessageAction(label="太官腔了，請幽默一點", text="FEEDBACK_太官腔了")),
+        ]
+    )
 
 # === 處理使用者訊息 ===
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
     user_id = event.source.user_id
     text = event.message.text.strip()
+    history = user_eeg_history.get(user_id, [])
 
     if text == "傳送EEG":
         try:
@@ -181,6 +192,11 @@ def handle_message(event):
             eeg_path = "/mnt/c/Users/陳郁玲/Desktop/BIOPAC/data/data.txt"
             eeg_state = process.predict_prob(eeg_path)
             
+            # 加入 EEG 歷史（最多 3 筆）
+            user_eeg_history[user_id].append(eeg_state)
+            if len(user_eeg_history[user_id]) > 3:
+                user_eeg_history[user_id] = user_eeg_history[user_id][-3:]
+
             # 加入自定義風格，若無則用預設
             style = user_style.get(user_id, {
                 "intent": "intent_relax",
@@ -188,7 +204,7 @@ def handle_message(event):
                 "persona": "persona_parent"
             })
             
-            prompt = build_prompt(eeg_state)
+            prompt = build_prompt(eeg_state, history=history)
             print(f"🧠 EEG 分類機率：{eeg_state}")
             reply = ask_gpt(prompt, style)         
 
@@ -223,6 +239,19 @@ def handle_message(event):
         # line_bot_api.push_message(user_id, TextSendMessage(text="✅ 已儲存你的對話風格，從現在開始我會照這樣回覆你！"))
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✅ 已儲存你的對話風格，從現在開始我會照這樣回覆你！"))
 
+    elif text.startswith("FEEDBACK_"):
+        feedback_type = text.split("_")[1].lower()
+        reply_text = {
+            "太長了": "收到！我會往更簡潔的方向改進！",
+            "太模糊了": "收到！我會往更具體的方向改進！",
+            "太官腔了": "收到！我會往更幽默的方向改進！"
+        }.get(feedback_type, "感謝你的回饋～我會改進的！")
+
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text=reply_text)
+        )
+
     else:
         conversation_history[user_id].append({"role": "user", "content": text})
         # 保留最近 MAX_TURNS 輪對話
@@ -230,7 +259,7 @@ def handle_message(event):
             conversation_history[user_id] = conversation_history[user_id][-MAX_TURNS * 2:]
 
         style = user_style.get(user_id, {
-            "persona": "persona_senior"
+            "persona": "persona_general"
         })
 
         system_prompt = build_custom_prompt(style)
@@ -246,7 +275,10 @@ def handle_message(event):
             # ✅ 使用 reply_message 回傳
             line_bot_api.reply_message(
                 event.reply_token,
-                TextSendMessage(text=reply)
+                TextSendMessage(
+                    text=reply,
+                    quick_reply=make_feedback_quick_reply()
+                )
             )
         except Exception as e:
             # line_bot_api.push_message(user_id, TextSendMessage(text=f"⚠️ GPT 回應錯誤：{e}"))
@@ -254,6 +286,7 @@ def handle_message(event):
                 event.reply_token,
                 TextSendMessage(text=f"⚠️ GPT 回應錯誤：{e}")
             )
+
 
 
 if __name__ == "__main__":
