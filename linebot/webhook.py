@@ -10,8 +10,9 @@ from linebot.models import FlexSendMessage
 from linebot.models import QuickReply, QuickReplyButton, MessageAction
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
+
 from eeg import process
-from gpt.response import build_prompt, ask_gpt
+from gpt_api.response import build_prompt, ask_gpt
 from style_selector import make_style_flex
 from persona_prompt_map import persona_map
 
@@ -173,9 +174,9 @@ def build_custom_prompt(style):
 def make_feedback_quick_reply():
     return QuickReply(
         items=[
-            QuickReplyButton(action=MessageAction(label="太長了，請精簡一點", text="FEEDBACK_太長了")),
-            QuickReplyButton(action=MessageAction(label="太模糊了，請具體一點", text="FEEDBACK_太模糊了")),
-            QuickReplyButton(action=MessageAction(label="太官腔了，請幽默一點", text="FEEDBACK_太官腔了")),
+            QuickReplyButton(action=MessageAction(label="太長了，請精簡一點", text="太長了，請精簡一點")),
+            QuickReplyButton(action=MessageAction(label="太模糊了，請具體一點", text="太模糊了，請具體一點")),
+            QuickReplyButton(action=MessageAction(label="太官腔了，請幽默一點", text="太官腔了，請幽默一點")),
         ]
     )
 
@@ -188,7 +189,7 @@ def handle_message(event):
 
     if text == "傳送EEG":
         try:
-            # eeg_path = "../raw_data/S09/6.txt"  # 可改為自動讀最新 EEG
+            # eeg_path = "../data/data_stress.txt"  # 可改為自動讀最新 EEG
             eeg_path = "/mnt/c/Users/陳郁玲/Desktop/BIOPAC/data/data.txt"
             eeg_state = process.predict_prob(eeg_path)
             
@@ -206,7 +207,10 @@ def handle_message(event):
             
             prompt = build_prompt(eeg_state, history=history)
             print(f"🧠 EEG 分類機率：{eeg_state}")
-            reply = ask_gpt(prompt, style)         
+            reply = ask_gpt(prompt, style)    
+            # 建立 EEG 狀態文字描述
+            percentages = [f"{prob:.0%}" for prob in eeg_state.values()]
+            eeg_text = "🧠 各腦波分類機率：" + f"({', '.join(percentages)})"    
 
             # 建立 Flex Message
             flex_json = generate_eeg_flex_message(eeg_state)
@@ -218,6 +222,7 @@ def handle_message(event):
                 event.reply_token,
                 messages=[
                     TextSendMessage(text=reply),
+                    TextSendMessage(text=eeg_text),
                     flex_msg
                 ]
             )
@@ -239,18 +244,6 @@ def handle_message(event):
         # line_bot_api.push_message(user_id, TextSendMessage(text="✅ 已儲存你的對話風格，從現在開始我會照這樣回覆你！"))
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text="✅ 已儲存你的對話風格，從現在開始我會照這樣回覆你！"))
 
-    elif text.startswith("FEEDBACK_"):
-        feedback_type = text.split("_")[1].lower()
-        reply_text = {
-            "太長了": "收到！我會往更簡潔的方向改進！",
-            "太模糊了": "收到！我會往更具體的方向改進！",
-            "太官腔了": "收到！我會往更幽默的方向改進！"
-        }.get(feedback_type, "感謝你的回饋～我會改進的！")
-
-        line_bot_api.reply_message(
-            event.reply_token,
-            TextSendMessage(text=reply_text)
-        )
 
     else:
         conversation_history[user_id].append({"role": "user", "content": text})

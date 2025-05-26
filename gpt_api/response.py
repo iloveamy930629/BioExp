@@ -1,15 +1,13 @@
 import os
 import openai
 from dotenv import load_dotenv
-from gpt.persona_map import persona_map
+from gpt_api.persona_map import persona_map
 
 load_dotenv("../.env")
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
 def build_prompt(eeg_state, history=None):
-    """
-    根據 EEG 分類機率輸出適合 GPT 的提示語句，讓 GPT 以年輕幽默又專業的方式回應。
-    """
+    # 根據 EEG 分類機率輸出適合 GPT 的提示語句，讓 GPT 以年輕幽默又專業的方式回應。
     # 中文轉換對應
     label_map = {
         "relax": "放鬆",
@@ -22,7 +20,6 @@ def build_prompt(eeg_state, history=None):
     amplified = {k: v ** 1.5 for k, v in eeg_state.items()}
     total = sum(amplified.values())
     normed = {k: v / total for k, v in amplified.items()}
-
     # 取主導狀態
     sorted_state = sorted(normed.items(), key=lambda x: x[1], reverse=True)
     dominant_key, dominant_val = sorted_state[0]
@@ -30,10 +27,8 @@ def build_prompt(eeg_state, history=None):
     # 但 percent_text 改為原始值
     true_percent = eeg_state[dominant_key]
     percent_text = f"{round(true_percent * 100, 1)}%"
-
     # 完整狀態描述
     state_str = "，".join([f"{label_map[k]} {round(v * 100, 1)}%" for k, v in sorted_state])
-    
     # 加入歷史紀錄
     history_summary = ""
     if history and len(history) > 1:

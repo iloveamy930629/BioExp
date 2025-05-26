@@ -10,7 +10,7 @@ STYLE_LAYERS = {
             ("👩‍🎓 學姊型", "persona_senior", "成熟理智又誘人，專屬你的課後輔導","https://raw.githubusercontent.com/iloveamy930629/linebot-images/main/persona_senio.png"),
             ("💖 可愛女友型", "persona_lover", "撒嬌黏人，甜蜜可愛陪伴你每一天","https://raw.githubusercontent.com/iloveamy930629/linebot-images/main/persona_lover.png"),
             ("🧑‍🏫 父母師長型", "persona_parent", "穩重引導你，果斷有效率的解決困難","https://raw.githubusercontent.com/iloveamy930629/linebot-images/main/persona_parent.png"),
-            ("🧑‍🤝‍🧑 死黨麻吉型", "persona_friend", "社會再走、義氣要有，嘴砲鬧事卻又挺你","https://raw.githubusercontent.com/iloveamy930629/linebot-images/main/persona_friend.png"),
+            ("🧑‍🤝‍🧑 死黨麻吉型", "persona_friend", "社會在走、義氣要有，嘴砲鬧事卻又挺你","https://raw.githubusercontent.com/iloveamy930629/linebot-images/main/persona_friend.png"),
             ("🔮 塔羅占卜型", "persona_prophecy", "陰陽通靈知天命，指引你穿越命運迷霧","https://raw.githubusercontent.com/iloveamy930629/linebot-images/main/persona_prophecy.png"),
         ]
     }
